@@ -1,5 +1,9 @@
 # PGPBox (JS)
-A user-friendly PGP Web GUI for generating, storing, encrypting, decrypting, signing and verifying PGP messages. Secure your communications effortlessly with this intuitive web-based application.
+A user-friendly PGP Web GUI for generating, storing, encrypting, decrypting, signing and verifying PGP messages. Secure your communications effortlessly with this intuitive web-based application.<br><br>
+This project stores the PGP keys in your local browser storage
+
+## Demo
+[Click here to view PGPBox within GitHub (joshuavanderpoll.github.io/PGPBox-js)](https://joshuavanderpoll.github.io/PGPBox-js/public/)
 
 ## Features
 - Generate PGP keys
