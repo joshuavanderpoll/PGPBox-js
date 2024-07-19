@@ -1,0 +1,61 @@
+name: Verify File Integrity
+
+on: [push, pull_request]
+
+jobs:
+  verify_hashes:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Download openpgp.min.js from CDN
+      run: |
+        curl -o cdn_openpgp.min.js https://unpkg.com/openpgp@5.11.2/dist/openpgp.min.js
+
+    - name: Download tailwind.min.css from CDN
+      run: |
+        curl -o cdn_tailwind.min.css https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css
+
+    - name: Calculate hash for openpgp.min.js from CDN
+      id: cdn_hash_openpgp
+      run: |
+        CDN_HASH_OPENPGP=$(sha256sum cdn_openpgp.min.js | awk '{ print $1 }')
+        echo "CDN_HASH_OPENPGP=${CDN_HASH_OPENPGP}" >> $GITHUB_ENV
+
+    - name: Calculate hash for tailwind.min.css from CDN
+      id: cdn_hash_tailwind
+      run: |
+        CDN_HASH_TAILWIND=$(sha256sum cdn_tailwind.min.css | awk '{ print $1 }')
+        echo "CDN_HASH_TAILWIND=${CDN_HASH_TAILWIND}" >> $GITHUB_ENV
+
+    - name: Calculate hash for local openpgp.min.js
+      id: local_hash_openpgp
+      run: |
+        LOCAL_HASH_OPENPGP=$(sha256sum public/scripts/openpgp.min.js | awk '{ print $1 }')
+        echo "LOCAL_HASH_OPENPGP=${LOCAL_HASH_OPENPGP}" >> $GITHUB_ENV
+
+    - name: Calculate hash for local tailwind.min.css
+      id: local_hash_tailwind
+      run: |
+        LOCAL_HASH_TAILWIND=$(sha256sum public/style/tailwind.min.css | awk '{ print $1 }')
+        echo "LOCAL_HASH_TAILWIND=${LOCAL_HASH_TAILWIND}" >> $GITHUB_ENV
+
+    - name: Verify hash for openpgp.min.js
+      run: |
+        if [ "$LOCAL_HASH_OPENPGP" != "$CDN_HASH_OPENPGP" ]; then
+          echo "Hash mismatch for openpgp.min.js. Expected: $CDN_HASH_OPENPGP, Found: $LOCAL_HASH_OPENPGP"
+          exit 1
+        else
+          echo "Hash for openpgp.min.js is verified successfully."
+        fi
+
+    - name: Verify hash for tailwind.min.css
+      run: |
+        if [ "$LOCAL_HASH_TAILWIND" != "$CDN_HASH_TAILWIND" ]; then
+          echo "Hash mismatch for tailwind.min.css. Expected: $CDN_HASH_TAILWIND, Found: $LOCAL_HASH_TAILWIND"
+          exit 1
+        else
+          echo "Hash for tailwind.min.css is verified successfully."
+        fi
