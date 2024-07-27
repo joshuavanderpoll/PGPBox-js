@@ -11,6 +11,8 @@ async function generateKeys() {
     generateBtn.disabled = true;
     generateBtn.innerHTML = 'Generating...';
 
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     try {
         let privateKey, publicKey, fingerprint, expirationDate;
 
@@ -18,7 +20,7 @@ async function generateKeys() {
             let rsaBits = parseInt(keyType.split('-')[1], 10);
 
             if (rsaBits === 4096) {
-                setTimeout(() => alert("Generating RSA-4096 key, this may take a while..."), 10);
+                alert("Generating RSA-4096 key, this may take a while...");
             }
 
             const keyPair = await openpgp.generateKey({
@@ -72,17 +74,37 @@ async function storeKeys() {
     const key = document.getElementById('key').value;
 
     let fingerprint, expirationDate, email, comment;
+    let privateKey = null;
+    let publicKey = null;
 
     try {
-        const publicKeyObj = await openpgp.readKey({ armoredKey: key });
-        fingerprint = publicKeyObj.getFingerprint();
-        expirationDate = getExpirationTime(await publicKeyObj.getExpirationTime());
+        // Try to read the key as a private key
+        try {
+            const privateKeyObj = await openpgp.readPrivateKey({ armoredKey: key });
+            privateKey = key;
+            publicKey = (await privateKeyObj.toPublic()).armor();
+            fingerprint = privateKeyObj.getFingerprint();
+            expirationDate = getExpirationTime(await privateKeyObj.getExpirationTime());
 
-        const userIDs = publicKeyObj.getUserIDs();
-        if (userIDs.length > 0) {
-            const [userID] = userIDs[0].split('<');
-            comment = userID.trim();
-            email = userIDs[0].match(/<([^>]+)>/)[1];
+            const userIDs = privateKeyObj.getUserIDs();
+            if (userIDs.length > 0) {
+                const [userID] = userIDs[0].split('<');
+                comment = userID.trim();
+                email = userIDs[0].match(/<([^>]+)>/)[1];
+            }
+        } catch (error) {
+            // If it fails, try to read it as a public key
+            const publicKeyObj = await openpgp.readKey({ armoredKey: key });
+            publicKey = key;
+            fingerprint = publicKeyObj.getFingerprint();
+            expirationDate = getExpirationTime(await publicKeyObj.getExpirationTime());
+
+            const userIDs = publicKeyObj.getUserIDs();
+            if (userIDs.length > 0) {
+                const [userID] = userIDs[0].split('<');
+                comment = userID.trim();
+                email = userIDs[0].match(/<([^>]+)>/)[1];
+            }
         }
 
         const existingKey = keys.find(k => k.fingerprint === fingerprint);
@@ -91,7 +113,7 @@ async function storeKeys() {
             return;
         }
 
-        keys.push({ privateKey: key, publicKey: key, email, comment, expirationDate, fingerprint });
+        keys.push({ privateKey, publicKey, email, comment, expirationDate, fingerprint });
         saveKeysToLocalStorage();
         refreshKeyList();
 
@@ -108,7 +130,10 @@ function refreshKeyList() {
     keysList.innerHTML = '';
 
     keys.forEach((key, index) => {
-        const copyPrivateKey = key.privateKey ? `<button class="copyPrivateKeyButton bg-red-500 text-white px-2 py-1 rounded" data-index="${index}">Copy Private</button>` : '';
+        let copyPrivateKey = '';
+        if (key.privateKey) {
+            copyPrivateKey = `<button class="copyPrivateKeyButton bg-red-500 text-white px-2 py-1 rounded" data-index="${index}">Copy Private</button>`;
+        }
 
         const row = `<tr>
             <td class="border px-4 py-2">${formatFingerprint(key.fingerprint)}</td>
