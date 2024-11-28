@@ -7,11 +7,13 @@ async function generateKeys() {
     const password = document.getElementById('keyPassword').value;
     const comment = document.getElementById('keyComment').value;
     const email = document.getElementById('keyEmail').value;
+    const expiration = document.getElementById('keyExpiration').value;
 
     generateBtn.disabled = true;
     generateBtn.innerHTML = 'Generating...';
 
     await new Promise(resolve => setTimeout(resolve, 10));
+    const expirationInSeconds = expiration == '' ? 0 : Math.round((new Date(expiration).getTime() - new Date().getTime()) / 1000);
 
     try {
         let privateKey, publicKey, fingerprint, expirationDate;
@@ -19,15 +21,14 @@ async function generateKeys() {
         if (keyType.startsWith('RSA')) {
             let rsaBits = parseInt(keyType.split('-')[1], 10);
 
-            if (rsaBits === 4096) {
-                alert("Generating RSA-4096 key, this may take a while...");
-            }
+            alert(`Generating RSA-${rsaBits} key, this can take a while...`);
 
             const keyPair = await openpgp.generateKey({
                 type: 'rsa',
                 rsaBits: rsaBits,
                 userIDs: [{ name: comment, email: email }],
-                passphrase: password
+                passphrase: password,
+                keyExpirationTime: expirationInSeconds // 0 (never expires) - Number of seconds from the key creation time after which the key expires
             });
 
             privateKey = keyPair.privateKey;
@@ -44,7 +45,8 @@ async function generateKeys() {
                 type: 'ecc',
                 curve: curve,
                 userIDs: [{ name: comment, email: email }],
-                passphrase: password
+                passphrase: password,
+                keyExpirationTime: expirationInSeconds // 0 (never expires) - Number of seconds from the key creation time after which the key expires
             });
 
             privateKey = keyPair.privateKey;
@@ -61,6 +63,7 @@ async function generateKeys() {
         document.getElementById('keyPassword').value = '';
         document.getElementById('keyComment').value = '';
         document.getElementById('keyEmail').value = '';
+        document.getElementById('keyExpiration').value = '';
     } catch (error) {
         alert(`Error generating keys: ${error.message}`);
     } finally {
@@ -73,7 +76,7 @@ async function generateKeys() {
 async function storeKeys() {
     const key = document.getElementById('key').value;
 
-    let fingerprint, expirationDate, email, comment;
+    let fingerprint, expirationDate, email, comment, name, userLabel;
     let privateKey = null;
     let publicKey = null;
 
@@ -86,12 +89,10 @@ async function storeKeys() {
             fingerprint = privateKeyObj.getFingerprint();
             expirationDate = getExpirationTime(await privateKeyObj.getExpirationTime());
 
-            const userIDs = privateKeyObj.getUserIDs();
-            if (userIDs.length > 0) {
-                const [userID] = userIDs[0].split('<');
-                comment = userID.trim();
-                email = userIDs[0].match(/<([^>]+)>/)[1];
-            }
+            const userID = privateKeyObj.users?.[0]?.userID || {};
+            comment = userID.comment || '';
+            userLabel = userID.userID || '';
+            email = userID.email || '';
         } catch (error) {
             // If it fails, try to read it as a public key
             const publicKeyObj = await openpgp.readKey({ armoredKey: key });
@@ -99,12 +100,10 @@ async function storeKeys() {
             fingerprint = publicKeyObj.getFingerprint();
             expirationDate = getExpirationTime(await publicKeyObj.getExpirationTime());
 
-            const userIDs = publicKeyObj.getUserIDs();
-            if (userIDs.length > 0) {
-                const [userID] = userIDs[0].split('<');
-                comment = userID.trim();
-                email = userIDs[0].match(/<([^>]+)>/)[1];
-            }
+            const userID = publicKeyObj.users?.[0]?.userID || {};
+            comment = userID.comment || '';
+            userLabel = userID.userID || '';
+            email = userID.email || '';
         }
 
         const existingKey = keys.find(k => k.fingerprint === fingerprint);
@@ -113,7 +112,7 @@ async function storeKeys() {
             return;
         }
 
-        keys.push({ privateKey, publicKey, email, comment, expirationDate, fingerprint });
+        keys.push({ privateKey, publicKey, email, comment, expirationDate, fingerprint, userLabel });
         saveKeysToLocalStorage();
         refreshKeyList();
 
@@ -137,9 +136,10 @@ function refreshKeyList() {
 
         const row = `<tr>
             <td class="border px-4 py-2">${formatFingerprint(key.fingerprint)}</td>
-            <td class="border px-4 py-2">${key.email}</td>
-            <td class="border px-4 py-2">${key.expirationDate}</td>
-            <td class="border px-4 py-2">${key.comment}</td>
+            <td class="border px-4 py-2">${key.email || ''}</td>
+            <td class="border px-4 py-2">${key.userLabel || ''}</td>
+            <td class="border px-4 py-2">${key.expirationDate || 'N/a'}</td>
+            <td class="border px-4 py-2">${key.comment || ''}</td>
             <td class="border px-4 py-2">
                 <button class="copyPublicKeyButton bg-blue-500 text-white px-2 py-1 rounded" data-index="${index}">Copy Public</button>
                 ${copyPrivateKey}
@@ -390,6 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadKeysFromLocalStorage();
     refreshKeyList();
 
+    // Listeners
     document.getElementById('generateKeysButton').addEventListener('click', generateKeys);
     document.getElementById('storeKeysButton').addEventListener('click', storeKeys);
     document.getElementById('reloadKeysButton').addEventListener('click', refreshKeyList);
@@ -398,11 +399,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('signMessageButton').addEventListener('click', signMessage);
     document.getElementById('verifyMessageButton').addEventListener('click', verifyMessage);
 
-    document.querySelectorAll('textarea[readonly]').forEach(textarea => {
-        textarea.addEventListener('click', function() {
-            selectText(this);
-        });
-    });
+    // Expiration date must be in the future
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('keyExpiration').setAttribute('min', today);
 });
 
 function formatFingerprint(fingerprint) {
