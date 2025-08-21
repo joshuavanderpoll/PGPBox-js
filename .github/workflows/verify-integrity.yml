@@ -7,55 +7,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Download openpgp.min.js from CDN
-      run: |
-        curl -o cdn_openpgp.min.js https://unpkg.com/openpgp@5.11.2/dist/openpgp.min.js
+      - name: Download CDN artifacts
+        run: |
+          set -euo pipefail
+          curl -fsSL -o cdn_openpgp.min.js https://unpkg.com/openpgp@6.2.0/dist/openpgp.min.js
+          # Tailwind CDN script (loader) served as JS from cdn.tailwindcss.com
+          curl -fsSL -o cdn_tailwind.min.js https://cdn.tailwindcss.com/3.4.17
 
-    - name: Download tailwind.min.css from CDN
-      run: |
-        curl -o cdn_tailwind.min.css https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css
+      - name: Compute SHA512 hashes
+        run: |
+          set -euo pipefail
 
-    - name: Calculate hash for openpgp.min.js from CDN
-      id: cdn_hash_openpgp
-      run: |
-        CDN_HASH_OPENPGP=$(sha256sum cdn_openpgp.min.js | awk '{ print $1 }')
-        echo "CDN_HASH_OPENPGP=${CDN_HASH_OPENPGP}" >> $GITHUB_ENV
+          echo "::group::CDN hashes"
+          sha512sum cdn_openpgp.min.js | tee cdn_openpgp.min.js.sha512
+          sha512sum cdn_tailwind.min.js | tee cdn_tailwind.min.js.sha512
+          echo "::endgroup::"
 
-    - name: Calculate hash for tailwind.min.css from CDN
-      id: cdn_hash_tailwind
-      run: |
-        CDN_HASH_TAILWIND=$(sha256sum cdn_tailwind.min.css | awk '{ print $1 }')
-        echo "CDN_HASH_TAILWIND=${CDN_HASH_TAILWIND}" >> $GITHUB_ENV
+          echo "::group::Local file presence"
+          test -f public/scripts/openpgp.min.js && echo "Found public/scripts/openpgp.min.js"
+          test -f public/scripts/tailwind.min.js && echo "Found public/scripts/tailwind.min.js"
+          echo "::endgroup::"
 
-    - name: Calculate hash for local openpgp.min.js
-      id: local_hash_openpgp
-      run: |
-        LOCAL_HASH_OPENPGP=$(sha256sum public/scripts/openpgp.min.js | awk '{ print $1 }')
-        echo "LOCAL_HASH_OPENPGP=${LOCAL_HASH_OPENPGP}" >> $GITHUB_ENV
+          echo "::group::Local hashes"
+          sha512sum public/scripts/openpgp.min.js | tee local_openpgp.min.js.sha512
+          sha512sum public/scripts/tailwind.min.js | tee local_tailwind.min.js.sha512
+          echo "::endgroup::"
 
-    - name: Calculate hash for local tailwind.min.css
-      id: local_hash_tailwind
-      run: |
-        LOCAL_HASH_TAILWIND=$(sha256sum public/style/tailwind.min.css | awk '{ print $1 }')
-        echo "LOCAL_HASH_TAILWIND=${LOCAL_HASH_TAILWIND}" >> $GITHUB_ENV
+          # Export to env
+          echo "CDN_HASH_OPENPGP=$(cut -d' ' -f1 cdn_openpgp.min.js.sha512)" >> $GITHUB_ENV
+          echo "CDN_HASH_TAILWIND=$(cut -d' ' -f1 cdn_tailwind.min.js.sha512)" >> $GITHUB_ENV
+          echo "LOCAL_HASH_OPENPGP=$(cut -d' ' -f1 local_openpgp.min.js.sha512)" >> $GITHUB_ENV
+          echo "LOCAL_HASH_TAILWIND=$(cut -d' ' -f1 local_tailwind.min.js.sha512)" >> $GITHUB_ENV
 
-    - name: Verify hash for openpgp.min.js
-      run: |
-        if [ "$LOCAL_HASH_OPENPGP" != "$CDN_HASH_OPENPGP" ]; then
-          echo "Hash mismatch for openpgp.min.js. Expected: $CDN_HASH_OPENPGP, Found: $LOCAL_HASH_OPENPGP"
-          exit 1
-        else
-          echo "Hash for openpgp.min.js is verified successfully."
-        fi
+      - name: Verify hashes
+        run: |
+          set -euo pipefail
+          mismatch=0
 
-    - name: Verify hash for tailwind.min.css
-      run: |
-        if [ "$LOCAL_HASH_TAILWIND" != "$CDN_HASH_TAILWIND" ]; then
-          echo "Hash mismatch for tailwind.min.css. Expected: $CDN_HASH_TAILWIND, Found: $LOCAL_HASH_TAILWIND"
-          exit 1
-        else
-          echo "Hash for tailwind.min.css is verified successfully."
-        fi
+          if [ "$LOCAL_HASH_OPENPGP" != "$CDN_HASH_OPENPGP" ]; then
+            echo "::error title=openpgp.min.js hash mismatch::Expected $CDN_HASH_OPENPGP but found $LOCAL_HASH_OPENPGP"
+            mismatch=1
+          else
+            echo "openpgp.min.js hash verified ✅"
+          fi
+
+          if [ "$LOCAL_HASH_TAILWIND" != "$CDN_HASH_TAILWIND" ]; then
+            echo "::error title=tailwind.min.js hash mismatch::Expected $CDN_HASH_TAILWIND but found $LOCAL_HASH_TAILWIND"
+            mismatch=1
+          else
+            echo "tailwind.min.js hash verified ✅"
+          fi
+
+          exit $mismatch
